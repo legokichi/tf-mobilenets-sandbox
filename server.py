@@ -27,6 +27,7 @@ with detection_graph.as_default():
         serialized_graph = fid.read()
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
+
 # Loading label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS) # type: Dict[str, List[Dict[str, str]]]
 # label_map: { item: List<{id: str; name: str; display_name?: str; }>; }
@@ -44,10 +45,11 @@ def predict(img_expanded):
             scores = detection_graph.get_tensor_by_name('detection_scores:0')
             classes = detection_graph.get_tensor_by_name('detection_classes:0')
             num_detections = detection_graph.get_tensor_by_name('num_detections:0')
-            (boxes, scores, classes, num_detections) = sess.run(
-                [boxes, scores, classes, num_detections],
-                feed_dict={image_tensor: img_expanded}
-            )
+            with tf.contrib.compiler.jit.experimental_jit_scope():
+                (boxes, scores, classes, num_detections) = sess.run(
+                    [boxes, scores, classes, num_detections],
+                    feed_dict={image_tensor: img_expanded}
+                )
     return (
         np.squeeze(boxes),
         np.squeeze(scores),
@@ -94,7 +96,7 @@ def _proc(request, PNG):
     filename = "/tmp/img.img"
     files[0].save(filename)
 
-    img = io.imread(filename).astype(np.uint8)
+    img = cv2.imread(filename).astype(np.uint8)
     if img.shape[2] == 4:
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
     img_expanded = np.expand_dims(img, axis=0)
@@ -107,7 +109,7 @@ def _proc(request, PNG):
 
     start = time.time()
     (boxes, scores, classes) = predict(img_expanded)
-    print("predict {0:8.4g} sec".format(time.time() - start))
+    print("predict {0:8.4g} sec".format(time.time() - start), img_expanded.shape)
 
     if PNG:
         # return png
@@ -124,7 +126,7 @@ def _proc(request, PNG):
         )
         # 一旦 png で保存してから投げる
         filename = "/var/tmp/foo.png"
-        io.imsave(filename, img)
+        cv2.imsave(filename, img)
         res = send_file(filename, mimetype='image/png')
         os.remove(filename)
         return res
