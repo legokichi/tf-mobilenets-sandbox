@@ -27,6 +27,7 @@ with detection_graph.as_default():
         serialized_graph = fid.read()
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
+    sess = tf.Session(graph=detection_graph)
 
 # Loading label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS) # type: Dict[str, List[Dict[str, str]]]
@@ -36,26 +37,24 @@ categories = label_map_util.convert_label_map_to_categories(label_map, max_num_c
 category_index = label_map_util.create_category_index(categories) # type: Dict[str, Dict[str,str]]
 # category_index: List<{ [id: str]: {id: str; name: str; }; }>
 
+
 def predict(img_expanded):
     # type: (np.ndarray)-> Tuple[np.ndarray, np.ndarray, np.ndarray]
-    with detection_graph.as_default():
-        with tf.Session(graph=detection_graph) as sess:
-            image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
-            boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
-            scores = detection_graph.get_tensor_by_name('detection_scores:0')
-            classes = detection_graph.get_tensor_by_name('detection_classes:0')
-            num_detections = detection_graph.get_tensor_by_name('num_detections:0')
-            with tf.contrib.compiler.jit.experimental_jit_scope():
-                (boxes, scores, classes, num_detections) = sess.run(
-                    [boxes, scores, classes, num_detections],
-                    feed_dict={image_tensor: img_expanded}
-                )
+    image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+    boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+    scores = detection_graph.get_tensor_by_name('detection_scores:0')
+    classes = detection_graph.get_tensor_by_name('detection_classes:0')
+    num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+    #with tf.contrib.compiler.jit.experimental_jit_scope():
+    (boxes, scores, classes, num_detections) = sess.run(
+        [boxes, scores, classes, num_detections],
+        feed_dict={image_tensor: img_expanded}
+    )
     return (
         np.squeeze(boxes),
         np.squeeze(scores),
         np.squeeze(classes).astype(np.int32),
     )
-
 
 app = Flask(__name__, static_url_path='')
 
@@ -96,6 +95,7 @@ def _proc(request, PNG):
     filename = "/tmp/img.img"
     files[0].save(filename)
 
+    #img = io.imread(filename).astype(np.uint8)
     img = cv2.imread(filename).astype(np.uint8)
     if img.shape[2] == 4:
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
@@ -126,7 +126,8 @@ def _proc(request, PNG):
         )
         # 一旦 png で保存してから投げる
         filename = "/var/tmp/foo.png"
-        cv2.imsave(filename, img)
+        #io.imsave(filename, img)
+        cv2.imwrite(filename, img)
         res = send_file(filename, mimetype='image/png')
         os.remove(filename)
         return res
@@ -143,7 +144,8 @@ def _proc(request, PNG):
         (top, bottom) = (int(ymin * height), int(ymax * height))
         result_list.append({
             "class_name": class_name,
-            "box": (left, top, right, bottom),
+            "box": (xmin, ymin, xmax, ymax),
+            "rect": (left, top, right, bottom),
             "score": score
         })
 
